@@ -1,0 +1,124 @@
+- vpc
+| Name: cp-vpc-test
+| CIDR : 192.168.0.0/16
+
+
+-Internet gateway
+| Name: cp-ig
+
+- subnet
+| public subnet
+| Name: cp-public-subnet-test
+| CIDR : 192.168.1.0/24
+
+| private subnet
+| Name : cp-private-subnet-test
+| CIDR : 192.168.2.0/24
+
+
+- security groups
+| Public subnet sg
+| Name: cp-public-sg-test
+| Inbound rule : HTTP -> 192.168.1.0/24
+
+| Private subnet sg
+| Name: cp-private-sg-test
+| Inbound rule : MySQL -> 192.168.1.0/24 [For backend app]
+		 All -> All (temporary for setup)
+
+- Access control list
+| Name: cp-acl-test
+| VPC -> cp-vpc-test
+| Inbound: all allowed
+| Outbound: all allowed
+
+
+- RDS
+| Name: cp-database-test
+| Username: admin
+| Password: Parth1234
+| Instance: db.t3.micro
+| Storage type: GP2
+| Storage capacity: 20
+| Auto scaling : false
+| VPC security group : cp-private-sg-test
+| Zone: us-east-1b
+| Endpoint : cp-database-test.chjqc1vxyf2b.us-east-1.rds.amazonaws.com
+
+
+- secret manager
+| Name : cp-backend/dburl
+| Secret key : DbString
+| Value: Server=cp-database.chjqc1vxyf2b.us-east-1.rds.amazonaws.com;Database=cp-database;User=admin;Password=Admin123;Port=3306;
+| ARN : arn:aws:secretsmanager:us-east-1:789950722883:secret:cp-backend/dburl-9Ir8sn
+
+
+- Container registry
+| Repository name:cp_frontend
+
+- EC2
+| Name: cp-backend-instance-test
+| OS: AWS Linux
+| Instance: t2.micro
+| VPC: cp-vpc-test
+| Subnet: cp-public-subnet-test
+| Security group : cp-public-subnet-sg
+
+
+- ECS
+| Cluster name : cp-frontend-cluster-test
+
+
+- Task definition
+| Name: cp-frontend-task-definition-test
+| Launch type: AWS Fargate
+| CPU: 1 vCPU
+| Memory: 2 GB
+| Task role: LabRole
+| Task execution role: LabRole
+| Container name: cp-frontend-container-test
+| Image url: 789950722883.dkr.ecr.us-east-1.amazonaws.com/cp_frontend
+| Container port: 3000
+
+- Cluster service
+| Family: cp-frontend-task-definition-test
+| Service name: cp-frontend-service-test
+| VPC: cp-vpc-test
+| Subnet: cp-public-subnet-test
+| Security group: cp-public-sg-test
+| Public IP: true
+
+
+
+
+
+
+Image push command to ECR
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 789950722883.dkr.ecr.us-east-1.amazonaws.com
+docker build -t cp_frontend .
+docker tag cp_frontend:latest 789950722883.dkr.ecr.us-east-1.amazonaws.com/cp_frontend:latest
+docker push 789950722883.dkr.ecr.us-east-1.amazonaws.com/cp_frontend:latest
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

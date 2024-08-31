@@ -1,0 +1,312 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Cloud formation file for cloud project
+
+Resources:
+  #===================================NETWORK CONFIGURATIONS===================================
+  #VPC
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 192.167.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: cp-vpc-production
+
+  # Internet gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: cp-ig-production
+
+  # Attaching gateway to vpc
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  # Public subnet
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 192.167.1.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: us-east-1a
+      Tags:
+        - Key: Name
+          Value: cp-public-subnet-production
+
+  # Private subnet
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 192.167.2.0/24
+      AvailabilityZone: us-east-1a
+      Tags:
+        - Key: Name
+          Value: cp-private-subnet-production
+
+  #Database subnet
+  DatabaseSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: us-east-1b
+      VpcId: !Ref VPC
+      CidrBlock: 192.167.3.0/24
+      Tags:
+        - Key: Name
+          Value: cp-database-subnet-production
+
+  # PublicSubnet security group
+  PublicSubnetSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: cp-public-sg-production
+      GroupDescription: security group for public subnet
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5124
+          ToPort: 5124
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+
+  # Private subnet security group
+  PrivateSubnetSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: cp-private-sg-production
+      GroupDescription: security group for private subnet
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 1433
+          ToPort: 1433
+          CidrIp: 192.167.1.0/24
+
+  # Database subnet security group:
+  DatabaseSubnetSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: cp-database-sg-production
+      GroupDescription: security group for database subnet
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: 192.167.1.0/24
+
+  # Route table
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: cp-route-table-production
+
+  # Public allow traffic route
+  Route:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  # Associate route table to public subnet
+  SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref RouteTable
+
+  # Access control list
+  NetworkAcl:
+    Type: AWS::EC2::NetworkAcl
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: cp-acl-production
+
+  # Associate public subnet to nacl
+  SubnetNetworkAclAssociation:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      NetworkAclId: !Ref NetworkAcl
+
+  # ACL inbound allow all
+  InboundRule:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref NetworkAcl
+      RuleNumber: 10
+      Protocol: -1
+      RuleAction: allow
+      Egress: false
+      CidrBlock: 0.0.0.0/0
+
+  # ACL outbound allow all
+  OutboundRule:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref NetworkAcl
+      RuleNumber: 10
+      Protocol: -1
+      RuleAction: allow
+      Egress: true
+      CidrBlock: 0.0.0.0/0
+
+  # Database subnet group
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for RDS instance
+      SubnetIds:
+        - !Ref DatabaseSubnet
+        - !Ref PrivateSubnet
+      DBSubnetGroupName: cp-db-subnet-group-production
+
+  #===================================NETWORK CONFIGURATIONS===================================
+
+  # Database instance
+  MySqlRdsInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: 20
+      DBInstanceClass: db.t3.micro
+      Engine: mysql
+      AllowMajorVersionUpgrade: false
+      AutoMinorVersionUpgrade: false
+      AvailabilityZone: us-east-1b
+      DBInstanceIdentifier: cp-database-production
+      VPCSecurityGroups:
+        - !Ref DatabaseSubnetSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      MasterUsername: admin
+      MasterUserPassword: Parth1234
+      MultiAZ: false
+      PubliclyAccessible: true # temporary for initial configuration
+      StorageType: gp2
+      StorageEncrypted: true
+
+  Secret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: cp-backend-production/dburl
+      SecretString: !Sub |
+        {
+          "DbString": "Server=cp-database-production.chjqc1vxyf2b.us-east-1.rds.amazonaws.com;Database=cp-database-test;User=admin;Password=Parth1234;Port=3306;"
+        }
+
+  SNSTopicArnSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: cp-backend-production/sns-topic-arn
+      SecretString: !Sub |
+        {
+          "SnsTopicArn": "!Ref SNSForBackendAppNotification.Arn"
+        }
+
+  # Key pair for ec2 instance
+  KeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: key-pair-production
+
+  # EC2 instance for backend
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      KeyName: !Ref KeyPair
+      ImageId: ami-0ba9883b710b05ac6 # AWS linux
+      AvailabilityZone: us-east-1a
+      SubnetId: !Ref PublicSubnet
+      #IamInstanceProfile: arn:aws:iam::789950722883:instance-profile/LabnstanceProfile
+      SecurityGroupIds:
+        - !Ref PublicSubnetSecurityGroup
+      Tags:
+        - Key: Name
+          Value: cp-backend-instance-production
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          echo "Running User Data script"
+          # Update packages
+          sudo yum update -y
+          # Install a package
+          sudo yum install -y docker
+          # Start a service
+          sudo service docker start
+          sudo docker pull pathpanchal/cp_backend
+          sudo docker run --name BackendContainer -p 5124:8080 pathpanchal/cp_backend
+
+  # ECS cluster for frontend
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: cp-frontend-cluster-production
+      CapacityProviders:
+        - FARGATE
+
+  # Task definition
+  ECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: cp-frontend-task-definition-test
+      RequiresCompatibilities:
+        - FARGATE
+      NetworkMode: awsvpc
+      Memory: 2048
+      Cpu: 1024
+      ExecutionRoleArn: arn:aws:iam::789950722883:role/LabRole
+      TaskRoleArn: arn:aws:iam::789950722883:role/LabRole
+      ContainerDefinitions:
+        - Name: cp-frontend-container-production
+          Image: pathpanchal/cp_frontend
+          PortMappings:
+            - ContainerPort: 3000
+
+  # Container service
+  ECSService:
+    Type: AWS::ECS::Service
+    Properties:
+      LaunchType: FARGATE
+      Cluster: !Ref ECSCluster
+      DesiredCount: 1
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !Ref PublicSubnet
+          SecurityGroups:
+            - !Ref PublicSubnetSecurityGroup
+          AssignPublicIp: ENABLED
+      ServiceName: cp-frontend-service-production
+      TaskDefinition: !Ref ECSTaskDefinition
+
+  # SNS topic for notification
+  SNSForBackendAppNotification:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: cp-sns-production
+      FifoTopic: false
+      Subscription:
+        - Protocol: email
+          Endpoint: pathpanchal@gmail.com
+      TopicName: cp-sns-production
